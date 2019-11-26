@@ -239,7 +239,7 @@ fork(void)
 int
 clone(void *stack, int size)
 {
-  int i, pid;
+  int pid;
   struct proc *np;
   struct proc *curproc = myproc();
 
