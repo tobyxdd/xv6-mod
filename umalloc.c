@@ -3,6 +3,8 @@
 #include "user.h"
 #include "param.h"
 
+#define PGSIZE 4096
+
 // Memory allocator by Kernighan and Ritchie,
 // The C programming Language, 2nd ed.  Section 8.7.
 
@@ -86,5 +88,22 @@ malloc(uint nbytes)
     if(p == freep)
       if((p = morecore(nunits)) == 0)
         return 0;
+  }
+}
+
+int
+thread_create(void (*start_routine)(void*), void *arg)
+{
+  void *stack = malloc(PGSIZE*2);
+  stack = stack + (PGSIZE - (uint)stack % PGSIZE);
+
+  int pid = clone(stack, PGSIZE);
+
+  if(pid){
+    return pid;
+  }else{
+    // In the new thread
+    start_routine(arg);
+    return 0;
   }
 }
