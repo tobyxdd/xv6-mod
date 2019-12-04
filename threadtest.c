@@ -1,17 +1,54 @@
+#include "types.h"
 #include "user.h"
 
-void test(void *arg)
+int roundnum, rounds = 1;
+int playernum;
+int token = 0;
+lock_t *lk;
+
+void player(void *args)
 {
-    sleep(*(int *)arg);
-    printf(1, "Damn, my pid=%d\n", getpid());
+    int tid = *(int *)args;
+    if (roundnum < rounds)
+        exit();
+    while (roundnum >= rounds)
+    {
+        lock_acquire(lk);
+        if (token == tid)
+        {
+            token++;
+            if (token >= playernum)
+                token %= playernum;
+            printf(1, "Pass number no: %d, Thread %d is passing the token to thread %d\n", rounds, tid, token);
+            rounds++;
+        }
+        lock_release(lk);
+        sleep(5);
+    }
+    exit();
 }
 
 int main(int argc, char *argv[])
 {
-    int i;
-    for (i = 1; i < 10; i++)
+    int ppid = getpid();
+    if (argc != 3)
     {
-        int local_i = i;
-        thread_create(test, &local_i);
+        printf(1, "Invalid args\n");
+        exit();
     }
+    playernum = (int)(argv[1][0] - '0');
+    roundnum = (int)(argv[2][0] - '0');
+    lock_init(lk);
+
+    for (int i = 0; i < playernum; ++i)
+    {
+        thread_create(player, (void *)&i);
+        sleep(10);
+    }
+
+    sleep(20 * roundnum);
+    while (wait() >= 0)
+        ;
+    printf(1, "Simulation of Frisbee game has finished, %d rounds were played in total!", roundnum);
+    exit();
 }

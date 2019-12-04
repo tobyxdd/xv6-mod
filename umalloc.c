@@ -92,18 +92,19 @@ malloc(uint nbytes)
 }
 
 int
-thread_create(void (*start_routine)(void*), void *arg)
-{
-  void *stack = malloc(PGSIZE*2);
-  stack = stack + (PGSIZE - (uint)stack % PGSIZE);
-
-  int pid = clone(stack, PGSIZE);
-
-  if(pid){
-    return pid;
-  }else{
-    // In the new thread
-    start_routine(arg);
-    return 0;
+thread_create(void (*f)(void*), void *args) {
+  int stack_addr;
+  void *stack = malloc(PGSIZE);
+  if((uint)stack % PGSIZE != 0) {
+    free(stack);
+    stack = malloc(2 * PGSIZE);
+    stack_addr = (uint)stack;
+    stack = stack + (PGSIZE - (uint)stack % PGSIZE);
+  } else {
+    stack_addr = (uint)stack;
   }
+  ((uint*)stack)[0] = stack_addr;
+  int pid = clone(stack, f, args);
+
+  return pid;
 }

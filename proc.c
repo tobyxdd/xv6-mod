@@ -237,14 +237,16 @@ fork(void)
 }
 
 int
-clone(void *stack, int size)
+clone(void *stack, void(*f)(void*), void *arg)
 {
   int pid;
   struct proc *np;
   struct proc *curproc = myproc();
+  uint sp;
+  uint ustack[2];
 
-  // Stack pointer validation
-  if(size <= 0 || size % PGSIZE != 0){
+  // Alignment check
+  if(((uint)stack % PGSIZE) != 0) {
     return -1;
   }
 
@@ -254,7 +256,7 @@ clone(void *stack, int size)
   }
 
   np->pgdir = curproc->pgdir;
-  np->sz = (uint)stack + size;
+  np->sz = (uint)stack + PGSIZE;
   np->parent = curproc;
   *np->tf = *curproc->tf;
   np->thread = 1;
@@ -262,19 +264,23 @@ clone(void *stack, int size)
   // Clear %eax so that clone returns 0 in the child.
   np->tf->eax = 0;
 
-  // Set up the stack pointer
-  np->tf->esp = (uint)stack + size;
+  // Set up the thread's stack
+  sp = (uint)stack + PGSIZE;
+  ustack[0] = 0xffffffff;
+  ustack[1] = (uint)arg;
+  sp -= 2 * sizeof(uint);
+  if(copyout(np->pgdir, sp, ustack, 2*sizeof(uint)) < 0)
+    return -1;
+
+  np->tf->esp = sp;
+  np->tf->eip = (uint)f;
 
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
 
   pid = np->pid;
-
   acquire(&ptable.lock);
-
   np->state = RUNNABLE;
-
   release(&ptable.lock);
-
   return pid;
 }
 
@@ -342,15 +348,17 @@ wait(void)
     // Scan through table looking for exited children.
     havekids = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if((p->parent != curproc)||(p->thread)||(p->pgdir == curproc->pgdir)) // Don't wait threads
+      if(p->parent != curproc) // Don't wait threads
         continue;
       havekids = 1;
       if(p->state == ZOMBIE){
         // Found one.
         pid = p->pid;
+        if(!p->thread){
         kfree(p->kstack);
         p->kstack = 0;
         freevm(p->pgdir);
+        }
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
