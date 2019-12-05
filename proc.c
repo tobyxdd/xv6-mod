@@ -239,7 +239,7 @@ fork(void)
 int
 clone(void *stack, void(*f)(void*), void *arg)
 {
-  int pid;
+  int i, pid;
   struct proc *np;
   struct proc *curproc = myproc();
   uint sp;
@@ -263,6 +263,11 @@ clone(void *stack, void(*f)(void*), void *arg)
 
   // Clear %eax so that clone returns 0 in the child.
   np->tf->eax = 0;
+
+  for(i = 0; i < NOFILE; i++)
+    if(curproc->ofile[i])
+      np->ofile[i] = filedup(curproc->ofile[i]);
+  np->cwd = idup(curproc->cwd);
 
   // Set up the thread's stack
   sp = (uint)stack + PGSIZE;
