@@ -266,8 +266,8 @@ clone(void *stack, void(*f)(void*), void *arg)
 
   for(i = 0; i < NOFILE; i++)
     if(curproc->ofile[i])
-      np->ofile[i] = curproc->ofile[i];
-  np->cwd = curproc->cwd;
+      np->ofile[i] = filedup(curproc->ofile[i]);
+  np->cwd = idup(curproc->cwd);
 
   // Set up the thread's stack
   sp = (uint)stack + PGSIZE;
