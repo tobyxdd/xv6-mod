@@ -278,6 +278,7 @@ clone(void *stack, void(*f)(void*), void *arg)
     return -1;
 
   np->tf->esp = sp;
+  np->tf->ebp = np->tf->esp;
   np->tf->eip = (uint)f;
 
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
