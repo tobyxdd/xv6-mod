@@ -30,7 +30,6 @@ void player(void *args)
 
 int main(int argc, char *argv[])
 {
-    int ppid = getpid();
     if (argc != 3)
     {
         printf(1, "Invalid args\n");
@@ -38,7 +37,9 @@ int main(int argc, char *argv[])
     }
     playernum = (int)(argv[1][0] - '0');
     roundnum = (int)(argv[2][0] - '0');
-    lock_init(lk);
+
+    lk = malloc(sizeof(lock_t));
+    lock_release(lk);
 
     for (int i = 0; i < playernum; ++i)
     {
