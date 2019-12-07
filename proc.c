@@ -112,8 +112,6 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
-  p->thread = 0;
-
   return p;
 }
 
@@ -213,8 +211,6 @@ fork(void)
   np->parent = curproc;
   *np->tf = *curproc->tf;
 
-  np->thread = 0; // Clear thread flag
-
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
@@ -239,55 +235,51 @@ fork(void)
 int
 clone(void *stack, void(*f)(void*), void *arg)
 {
-  int i, pid;
-  struct proc *np;
-  struct proc *curproc = myproc();
-  uint sp;
+  struct proc *p = myproc();
+
+	int i, pid;
+	struct proc *np;
+
   uint ustack[2];
 
-  // Alignment check
-  if(((uint)stack % PGSIZE) != 0) {
-    return -1;
-  }
+	if((uint)stack%PGSIZE!=0){
+		return -1;
+	}
+	if((p->sz - (uint)stack) < PGSIZE){
+		return -1;
+	}
 
-  // Allocate process.
-  if((np = allocproc()) == 0){
-    return -1;
-  }
+	// Allocate process.
+	if((np = allocproc()) == 0)
+	return -1;
 
-  np->pgdir = curproc->pgdir;
-  np->sz = (uint)stack + PGSIZE;
-  np->parent = curproc;
-  *np->tf = *curproc->tf;
-  np->thread = 1;
+	// Copy process state from p.
+	np->pgdir = p->pgdir;
+	np->sz = p->sz;
+	np->parent = p;
+	*np->tf = *p->tf;
+	np->tf->esp = (uint)stack+PGSIZE;
 
-  // Clear %eax so that clone returns 0 in the child.
-  np->tf->eax = 0;
+	ustack[0] = 0xffffffff;
+	ustack[1] = (uint)arg;
+	np->tf->esp -= (2)*4;
+	copyout(np->pgdir, np->tf->esp, ustack, (2)*4);
+	 //Clear %eax so that fork returns 0 in the child.
+	np->tf->eax = 0;
+	np->tf->eip = (uint)f;
+	np->tf->ebp = np->tf->esp;
 
-  for(i = 0; i < NOFILE; i++)
-    if(curproc->ofile[i])
-      np->ofile[i] = filedup(curproc->ofile[i]);
-  np->cwd = idup(curproc->cwd);
+  // file descriptors.
+	for(i = 0; i < NOFILE; i++)
+	    if(p->ofile[i])
+	      np->ofile[i] = filedup(p->ofile[i]);
+	np->cwd = idup(p->cwd);
 
-  // Set up the thread's stack
-  sp = (uint)stack + PGSIZE;
-  ustack[0] = 0xffffffff;
-  ustack[1] = (uint)arg;
-  sp -= 2 * sizeof(uint);
-  if(copyout(np->pgdir, sp, ustack, 2*sizeof(uint)) < 0)
-    return -1;
-
-  np->tf->esp = sp;
-  np->tf->ebp = np->tf->esp;
-  np->tf->eip = (uint)f;
-
-  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
-
-  pid = np->pid;
-  acquire(&ptable.lock);
-  np->state = RUNNABLE;
-  release(&ptable.lock);
-  return pid;
+  // rest stuff.
+	pid = np->pid;
+	np->state = RUNNABLE;
+	safestrcpy(np->name, p->name, sizeof(p->name));
+	return pid;
 }
 
 // Exit the current process.  Does not return.
@@ -324,13 +316,16 @@ exit(void)
   // Pass abandoned children to init.
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->parent == curproc){
-      if(p->pgdir == curproc->pgdir){
-        // Preserve pgdir
-        curproc->pgdir = copyuvm(p->pgdir, p->sz);
-      }
-      p->parent = initproc;
+      if(p->pgdir != curproc->pgdir){
+        p->parent = initproc;
       if(p->state == ZOMBIE)
         wakeup1(initproc);
+      }
+      else{
+        // A parent that had thread need to be set to 0. For wait purpose.
+        p->parent = 0;
+        p->state = ZOMBIE;
+      }
     }
   }
 
@@ -354,17 +349,17 @@ wait(void)
     // Scan through table looking for exited children.
     havekids = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->parent != curproc) // Don't wait threads
+      if(p->parent != curproc)
+        continue;
+      if(p->pgdir == curproc->pgdir && p->pid != 0 && p->state == ZOMBIE)
         continue;
       havekids = 1;
       if(p->state == ZOMBIE){
         // Found one.
         pid = p->pid;
-        if(!p->thread){
         kfree(p->kstack);
         p->kstack = 0;
         freevm(p->pgdir);
-        }
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
